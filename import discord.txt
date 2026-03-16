@@ -1,0 +1,81 @@
+import discord
+from discord.ext import commands
+import os
+from flask import Flask
+from threading import Thread
+import asyncio
+
+# Keep-alive
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "Bot vivo"
+
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+
+# Bot
+intents = discord.Intents.default()
+intents.voice_states = True
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_ready():
+    print(f"{bot.user} conectado y listo!")
+
+    # Keepalive silencio (cada 20 segundos envía paquete vacío)
+    async def voice_keepalive():
+        while True:
+            for vc in bot.voice_clients:
+                if vc.is_connected():
+                    try:
+                        vc.send_audio_packet(b"\xf8\xff\xfe", encode=False)
+                    except:
+                        pass
+            await asyncio.sleep(20)
+
+    bot.loop.create_task(voice_keepalive())
+
+
+# Comando !unirse
+@bot.command(name="unirse")
+async def join_voice(ctx):
+    if not ctx.author.voice:
+        await ctx.send("¡Debes estar en un canal de voz!")
+        return
+
+    channel = ctx.author.voice.channel
+    vc = ctx.voice_client
+
+    if vc:
+        if vc.channel.id == channel.id:
+            await ctx.send("Ya estoy ahí.")
+            return
+        await vc.move_to(channel)
+    else:
+        vc = await channel.connect()
+
+    await ctx.send(f"Entré a **{channel.name}** y me quedo permanentemente.")
+
+
+# Comando !salir
+@bot.command(name="salir")
+async def leave_voice(ctx):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.send("Salí.")
+    else:
+        await ctx.send("No estoy en voz.")
+
+
+# Inicia
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    bot.run(os.getenv("TOKEN"))
